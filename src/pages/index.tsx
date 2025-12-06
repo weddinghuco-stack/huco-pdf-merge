@@ -66,7 +66,10 @@ export default function Home() {
 
   const handleFileUpload = useCallback(async (files: FileList | null) => {
     if (!files) return;
-
+    if (files.length > 2) {
+      toast.error("Maksimal upload 2 file ZIP!");
+      return;
+    }
     setIsLoading(true);
     const newZipGroups: ZipGroup[] = [];
 
@@ -356,8 +359,8 @@ export default function Home() {
   const text = "beberapa file PDF dari ZIP menjadi satu dengan".split(" ");
 
   return (
-    <main className='w-full bg-background items-start min-h-screen justify-center flex'>
-      <div className='container flex flex-col mx-auto px-4 py-12 w-full max-w-3xl min-h-screen'>
+    <main className='w-full bg-background items-start min-h-svh justify-center flex'>
+      <div className='container flex flex-col mx-auto px-4 py-12 w-full max-w-3xl min-h-svh'>
         <div className='text-center mb-10 flex-0'>
           <motion.h1 initial={animVariants.fadeDown.initial} animate={animVariants.fadeDown.animate} transition={animVariants.fadeDown.transition} className='text-4xl font-bold text-foreground mb-3 text-balance uppercase'>
             PDF <span className='text-primary/50'>Merger</span>
@@ -398,7 +401,9 @@ export default function Home() {
                 </motion.div>
                 Upload ZIP Files
               </CardTitle>
-              <CardDescription>Pilih atau drag & drop file ZIP yang berisi PDF</CardDescription>
+              <CardDescription>
+                Pilih atau drag & drop file ZIP yang berisi PDF <br /> Maks file ZIP = 2
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <label
