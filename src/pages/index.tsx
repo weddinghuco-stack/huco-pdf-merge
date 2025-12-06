@@ -524,7 +524,7 @@ export default function Home() {
             </motion.div>
           )}
         </AnimatePresence>
-        <div className='absolute right-0 bottom-0 z-50 text-primary text-xs flex items-end gap-2 md:text-2xl font-extralight pr-2 pb-2 md:p-10  '>
+        <div className='fixed right-0 bottom-0 z-50 text-primary text-xs flex items-end gap-2 md:text-2xl font-extralight pr-2 pb-2 md:p-10  '>
           <Link href={"https://muhammadhilmanhumaini.vercel.app"} target='_blank' className='font-extralight !!text-primary-foreground'>
             Made with ❤️ by Muhammad Hilman Humaini
           </Link>
