@@ -10,6 +10,7 @@ import { AnimatePresence, motion, MotionNodeAnimationOptions, Variant, Variants 
 import { toast } from "sonner";
 import Link from "next/link";
 import Image from "next/image";
+import { InstallPrompt } from "@/components/install-prompt";
 
 interface PDFFile {
   id: string;
@@ -360,6 +361,7 @@ export default function Home() {
 
   return (
     <main className='w-full bg-background items-start min-h-svh justify-center flex'>
+      <InstallPrompt />
       <div className='container flex flex-col mx-auto px-4 py-12 w-full max-w-3xl min-h-svh'>
         <div className='text-center mb-10 flex-0'>
           <motion.h1 initial={animVariants.fadeDown.initial} animate={animVariants.fadeDown.animate} transition={animVariants.fadeDown.transition} className='text-4xl font-bold text-foreground mb-3 text-balance uppercase'>
