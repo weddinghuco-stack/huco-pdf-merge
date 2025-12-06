@@ -6,11 +6,11 @@ import JSZip from "jszip";
 import { FileUp, Trash2, Download, Loader2, Archive } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { InstallPrompt } from "@/components/install-prompt";
-import { AnimatePresence, motion, MotionNodeAnimationOptions, Variant } from "motion/react";
+import { AnimatePresence, motion, MotionNodeAnimationOptions, Variant, Variants } from "motion/react";
 import { toast } from "sonner";
-import Image from "next/image";
 import Link from "next/link";
+import Image from "next/image";
+
 interface PDFFile {
   id: string;
   arrayBuffer: ArrayBuffer;
@@ -24,36 +24,44 @@ interface ZipGroup {
   files: PDFFile[];
   totalPages: number;
 }
+
 const animVariants: Record<string, MotionNodeAnimationOptions> = {
   fadeDown: {
-    initial: {
-      opacity: 0,
-      y: -20
-    },
+    initial: { opacity: 0, y: -20 },
     animate: { opacity: 1, y: 0 },
-    transition: { duration: 0.5, ease: "easeOut", type: "spring" } as const
-  },
-  fadeUp: {
-    initial: { opacity: 0, y: 20 },
-    animate: { opacity: 1, y: 0 },
-    transition: { duration: 0.5, ease: "easeOut", type: "spring" } as const
+    transition: { duration: 0.5, ease: "easeOut", type: "spring" }
   },
   fadeLeft: {
     initial: { opacity: 0, x: -20 },
     animate: { opacity: 1, x: 0 },
-    transition: { duration: 0.5, ease: "easeOut", type: "spring" } as const
+    transition: { duration: 0.5, ease: "easeOut", type: "spring" }
   },
   fadeRight: {
     initial: { opacity: 0, x: 20 },
     animate: { opacity: 1, x: 0 },
-    transition: { duration: 0.5, ease: "easeOut", type: "tween" } as const
+    transition: { duration: 0.5, ease: "easeOut", type: "tween" }
   }
 };
+const itemVariants: Record<string, Variant> = {
+  hidden: { opacity: 0, y: 10 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: "easeOut" } }
+};
+
+interface UnmatchedFile {
+  fileId: string;
+  fileName: string;
+  zipName: string;
+  zipIndex: number;
+  file: PDFFile;
+}
+
 export default function Home() {
   const [zipGroups, setZipGroups] = useState<ZipGroup[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isMerging, setIsMerging] = useState(false);
   const [mergingProgress, setMergingProgress] = useState<string>("");
+  const [unmatchedFiles, setUnmatchedFiles] = useState<UnmatchedFile[]>([]);
+  const [showUnmatched, setShowUnmatched] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = useCallback(async (files: FileList | null) => {
@@ -85,7 +93,7 @@ export default function Home() {
                   pageCount
                 });
               } catch (error) {
-                console.error(`Error loading PDF from zip: ${filename}`, error);
+                toast.error(`Error loading PDF: ${filename}`);
               }
             }
           }
@@ -100,77 +108,161 @@ export default function Home() {
               totalPages: pdfFiles.reduce((sum, f) => sum + f.pageCount, 0)
             });
           } else {
-            toast.error(`Tidak ada file PDF dalam folder ZIP : ${file.name}`);
-
-            continue; // tetap lanjut ke file berikutnya
+            toast.error(`Tidak ada file PDF dalam ZIP: ${file.name}`);
           }
         } catch (error) {
           toast.error(`Error loading ZIP: ${file.name}`);
-          console.error(`Error loading ZIP: ${file.name}`, error);
         }
       } else {
         toast.error(`File is not a ZIP: ${file.name}`);
       }
     }
 
-    // update state sekali di akhir
     if (newZipGroups.length > 0) {
       setZipGroups((prev) => [...prev, ...newZipGroups]);
     }
 
-    // reset input supaya user bisa upload file sama lagi
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
 
     setIsLoading(false);
   }, []);
+
   const removeZipGroup = (id: string) => {
     setZipGroups((prev) => prev.filter((g) => g.id !== id));
+  };
+
+  // Fungsi untuk mengekstrak ID unik dari nama file
+  const extractFileId = (filename: string): string => {
+    const nameWithoutExt = filename.replace(/\.pdf$/i, "");
+    const match = nameWithoutExt.match(/\d+[A-Z]\d+[A-Z]\d+/);
+    if (match) return match[0];
+    return nameWithoutExt.trim().split(" ").pop() || nameWithoutExt;
   };
 
   const mergeAndExportZip = async () => {
     if (zipGroups.length < 2) return;
 
-    // Set loading state IMMEDIATELY
     setIsMerging(true);
-    setMergingProgress("Memulai proses merge...");
+    setMergingProgress("Memulai proses matching...");
 
-    // Use setTimeout to ensure UI updates before heavy processing
     setTimeout(async () => {
       try {
+        // Buat mapping dari file ID ke file dari setiap ZIP
+        const filesByZipAndId = new Map<string, Map<string, PDFFile>>();
+
+        zipGroups.forEach((group) => {
+          const filesMap = new Map<string, PDFFile>();
+
+          group.files.forEach((file) => {
+            const fileId = extractFileId(file.name);
+            filesMap.set(fileId, file);
+          });
+
+          filesByZipAndId.set(group.id, filesMap);
+        });
+
+        // Kumpulkan semua unique file IDs
+        const allFileIds = new Set<string>();
+        filesByZipAndId.forEach((filesMap) => {
+          filesMap.forEach((_, fileId) => {
+            allFileIds.add(fileId);
+          });
+        });
+
+        // Buat hasil matching
+        const matchResults: Array<{
+          fileId: string;
+          matchedFiles: Array<{ zipIndex: number; zipName: string; fileName: string; file: PDFFile }>;
+          willMerge: boolean;
+        }> = [];
+
+        allFileIds.forEach((fileId) => {
+          const matchedFiles: Array<{ zipIndex: number; zipName: string; fileName: string; file: PDFFile }> = [];
+
+          zipGroups.forEach((group, zipIndex) => {
+            const filesMap = filesByZipAndId.get(group.id);
+            const file = filesMap?.get(fileId);
+
+            if (file) {
+              matchedFiles.push({
+                zipIndex,
+                zipName: group.name,
+                fileName: file.name,
+                file: file
+              });
+            }
+          });
+
+          const willMerge = matchedFiles.length >= 2;
+          matchResults.push({ fileId, matchedFiles, willMerge });
+        });
+
+        const willBeMerged = matchResults.filter((r) => r.willMerge).length;
+
+        // Kumpulkan file yang tidak match
+        const unmatched: UnmatchedFile[] = [];
+        matchResults.forEach((result) => {
+          if (!result.willMerge && result.matchedFiles.length > 0) {
+            const match = result.matchedFiles[0];
+            unmatched.push({
+              fileId: result.fileId,
+              fileName: match.fileName,
+              zipName: match.zipName,
+              zipIndex: match.zipIndex,
+              file: match.file
+            });
+          }
+        });
+
+        setUnmatchedFiles(unmatched);
+
+        if (willBeMerged === 0) {
+          toast.error("Tidak ada file yang bisa di-merge!");
+          setMergingProgress("");
+          setIsMerging(false);
+          setShowUnmatched(true);
+          return;
+        }
+
+        // MULAI PROSES MERGE
+        setMergingProgress("Menggabungkan PDF...");
+
         const outputZip = new JSZip();
-        const maxFiles = Math.max(...zipGroups.map((g) => g.files.length));
+        const filesToMerge = matchResults.filter((r) => r.willMerge);
 
-        for (let i = 0; i < maxFiles; i++) {
-          setMergingProgress(`Menggabungkan file ${i + 1} dari ${maxFiles}...`);
+        for (let i = 0; i < filesToMerge.length; i++) {
+          const result = filesToMerge[i];
+          setMergingProgress(`Menggabungkan ${i + 1}/${filesToMerge.length}: ${result.fileId}`);
 
-          // Allow UI to update
-          await new Promise((resolve) => setTimeout(resolve, 0));
+          await new Promise((resolve) => setTimeout(resolve, 10));
 
-          const mergedPdf = await PDFDocument.create();
-          let hasContent = false;
+          try {
+            const mergedPdf = await PDFDocument.create();
 
-          for (const group of zipGroups) {
-            if (i < group.files.length) {
-              const pdfFile = group.files[i];
-              const pdfDoc = await PDFDocument.load(pdfFile.arrayBuffer);
+            // Sort by zipIndex untuk urutan ZIP 1 -> ZIP 2 -> ZIP 3...
+            const sortedMatches = [...result.matchedFiles].sort((a, b) => a.zipIndex - b.zipIndex);
+
+            // Gabungkan PDF dengan urutan: ZIP 1 di atas, ZIP 2 di bawah
+            for (const match of sortedMatches) {
+              const pdfDoc = await PDFDocument.load(match.file.arrayBuffer);
               const copiedPages = await mergedPdf.copyPages(pdfDoc, pdfDoc.getPageIndices());
               copiedPages.forEach((page) => mergedPdf.addPage(page));
-              hasContent = true;
             }
-          }
 
-          if (hasContent) {
             const mergedPdfBytes = await mergedPdf.save();
-            const baseFilename = zipGroups[0].files[i]?.name || `merged-${i + 1}.pdf`;
-            const filename = baseFilename.replace(/\.pdf$/i, "") + "-merged.pdf";
+
+            const filename = `${result.fileId}-merged.pdf`;
+
             outputZip.file(filename, mergedPdfBytes);
+          } catch (error) {
+            toast.error(`Error merging ${result.fileId}`);
           }
         }
 
+        // BUAT DAN DOWNLOAD ZIP
         setMergingProgress("Membuat file ZIP...");
-        await new Promise((resolve) => setTimeout(resolve, 100));
 
         const zipBlob = await outputZip.generateAsync({
           type: "blob",
@@ -178,68 +270,103 @@ export default function Home() {
           compressionOptions: { level: 6 }
         });
 
-        setMergingProgress("Mengunduh file...");
-        await new Promise((resolve) => setTimeout(resolve, 100));
+        setMergingProgress("📥 Mengunduh...");
 
+        // DOWNLOAD
         const url = URL.createObjectURL(zipBlob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = "merged-pdfs.zip";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "merged-pdfs.zip";
+        document.body.appendChild(a);
+        a.click();
+
+        setTimeout(() => {
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        }, 1000);
 
         setMergingProgress("Selesai! ✓");
-        toast.success("Selesai! ✓");
+        toast.success(`Berhasil merge ${willBeMerged} file!`);
+
+        // Clear input dan ZIP groups setelah merge berhasil
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+        setZipGroups([]);
+        setShowUnmatched(unmatched.length > 0);
+
         setTimeout(() => {
           setMergingProgress("");
           setIsMerging(false);
-        }, 1500);
+        }, 2000);
       } catch (e) {
-        console.error("Error merging PDFs:", e);
         setMergingProgress("");
         setIsMerging(false);
+        toast.error("Error saat proses merge");
       }
     }, 10);
   };
+
+  const downloadUnmatchedFiles = async () => {
+    if (unmatchedFiles.length === 0) return;
+
+    try {
+      toast.info("Membuat ZIP file yang tidak match...");
+      const outputZip = new JSZip();
+
+      unmatchedFiles.forEach((item) => {
+        outputZip.file(item.fileName, item.file.arrayBuffer);
+      });
+
+      const zipBlob = await outputZip.generateAsync({
+        type: "blob",
+        compression: "DEFLATE",
+        compressionOptions: { level: 6 }
+      });
+
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "unmatched-files.zip";
+      document.body.appendChild(a);
+      a.click();
+
+      setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 1000);
+
+      toast.success(`Download ${unmatchedFiles.length} file yang tidak match!`);
+    } catch (error) {
+      toast.error("Gagal download file yang tidak match");
+    }
+  };
+
   const containerVariants = {
     hidden: {},
     show: {
       transition: {
-        staggerChildren: 0.2 // jeda tiap kata 0.2 detik
+        staggerChildren: 0.2
       }
     }
   };
 
-  const itemVariants: Record<string, Variant> = {
-    hidden: { opacity: 0, y: 10 },
-    show: { opacity: 1, y: 0, transition: { duration: 0.5, ease: "easeOut" } }
-  };
   const totalFiles = zipGroups.reduce((sum, g) => sum + g.files.length, 0);
   const totalPages = zipGroups.reduce((sum, g) => sum + g.totalPages, 0);
   const text = "beberapa file PDF dari ZIP menjadi satu dengan".split(" ");
+
   return (
-    <main className='w-full bg-background  items-start min-h-screen justify-center flex'>
-      <InstallPrompt />
-      <div className='container flex flex-col mx-auto px-4 py-12 w-full  max-w-3xl min-h-screen'>
-        <div className='text-center mb-10 flex-0 '>
-          <motion.h1
-            initial={animVariants.fadeDown.initial}
-            animate={animVariants.fadeDown.animate}
-            transition={{
-              ...animVariants.fadeDown.transition,
-              duration: 0.5
-            }}
-            className='text-4xl font-bold text-foreground mb-3 text-balance uppercase'
-          >
-            PDF <span className='text-primary/50'> Merger</span>
+    <main className='w-full bg-background items-start min-h-screen justify-center flex'>
+      <div className='container flex flex-col mx-auto px-4 py-12 w-full max-w-3xl min-h-screen'>
+        <div className='text-center mb-10 flex-0'>
+          <motion.h1 initial={animVariants.fadeDown.initial} animate={animVariants.fadeDown.animate} transition={animVariants.fadeDown.transition} className='text-4xl font-bold text-foreground mb-3 text-balance uppercase'>
+            PDF <span className='text-primary/50'>Merger</span>
           </motion.h1>
-          <div className='text-muted-foreground text-xs md:text-lg inline-flex gap-1'>
+          <div className='text-muted-foreground text-xs md:text-lg inline-flex gap-1 flex-wrap justify-center'>
             <motion.div className='text-primary' animate={animVariants.fadeRight.animate} transition={{ ...animVariants.fadeRight.transition, delay: 1 }} initial={animVariants.fadeRight.initial}>
               Gabungkan
             </motion.div>
-            <motion.div className='' variants={containerVariants} initial='hidden' animate='show'>
+            <motion.div variants={containerVariants} initial='hidden' animate='show'>
               {text.map((word, i) => (
                 <motion.span key={i} variants={itemVariants} className='mr-1 inline-block'>
                   {word}
@@ -252,21 +379,20 @@ export default function Home() {
           </div>
         </div>
 
-        <div className='flex-1items-center justify-center h-full flex flex-col'>
-          <Card className='mb-6 '>
+        <div className='flex-1 items-center justify-center h-full flex flex-col'>
+          <Card className='mb-6 w-full'>
             <CardHeader>
               <CardTitle className='flex items-center gap-2'>
                 <motion.div
-                  animate={{ y: [-10, 0], rotate: [-25, 25, 0, -25, 25, 0] }} // kiri → tengah → kanan → tengah
+                  animate={{ y: [-10, 0], rotate: [-25, 25, 0, -25, 25, 0] }}
                   transition={{
-                    duration: 1, // total durasi satu siklus
+                    duration: 1,
                     repeat: Infinity,
                     ease: "easeInOut",
                     times: [0, 0.25, 0.5, 0.75, 1],
                     repeatDelay: 4,
                     repeatType: "loop"
                   }}
-                  className=''
                 >
                   <FileUp className='h-5 w-5' />
                 </motion.div>
@@ -294,9 +420,10 @@ export default function Home() {
               </label>
             </CardContent>
           </Card>
+
           <AnimatePresence mode='wait' initial={false}>
             {zipGroups.length > 0 && (
-              <motion.div initial='hidden' animate='visible' variants={containerVariants} className='mb-6'>
+              <motion.div initial='hidden' animate='visible' variants={containerVariants} className='mb-6 w-full'>
                 <Card className='mb-6'>
                   <CardHeader>
                     <CardTitle className='flex items-center justify-between'>
@@ -351,15 +478,51 @@ export default function Home() {
         </div>
 
         {zipGroups.length === 1 && <p className='text-center text-sm text-muted-foreground mt-3'>Tambahkan minimal 2 file ZIP untuk menggabungkan</p>}
-        <motion.div className='flex absolute left-0 bottom-0 px-2 gap-2 items-end text-muted-foreground'>
-          Made with by
-          <Link target='_blank' href='https://muhammadhilmanhumaini.vercel.app'>
-            HUCO PROJECT
+
+        {/* Tampilkan File yang Tidak Match */}
+        <AnimatePresence mode='wait'>
+          {showUnmatched && unmatchedFiles.length > 0 && (
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className='w-full mt-6'>
+              <Card className='border-yellow-500/50 bg-yellow-500/5'>
+                <CardHeader>
+                  <CardTitle className='flex items-center justify-between'>
+                    <span className='flex items-center gap-2 text-yellow-600 dark:text-yellow-500'>
+                      <Archive className='h-5 w-5' />
+                      File Tidak Match ({unmatchedFiles.length})
+                    </span>
+                    <Button variant='outline' size='sm' onClick={() => setShowUnmatched(false)} className='text-xs'>
+                      Tutup
+                    </Button>
+                  </CardTitle>
+                  <CardDescription>File ini tidak memiliki pasangan di ZIP lain dan tidak di-merge</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className='space-y-2 mb-4 max-h-64 overflow-y-auto'>
+                    {unmatchedFiles.map((item, idx) => (
+                      <div key={idx} className='flex items-center gap-3 p-2 bg-background rounded border border-border'>
+                        <div className='flex-1 min-w-0'>
+                          <p className='text-sm font-medium truncate'>{item.fileName}</p>
+                          <p className='text-xs text-muted-foreground'>
+                            Dari: {item.zipName} • ID: {item.fileId} • {item.file.pageCount} hal
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <Button onClick={downloadUnmatchedFiles} variant='outline' className='w-full border-yellow-500/50 hover:bg-yellow-500/10'>
+                    <Download className='mr-2 h-4 w-4' />
+                    Download {unmatchedFiles.length} File Tidak Match
+                  </Button>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+        </AnimatePresence>
+        <div className='absolute right-0 bottom-0 z-50 text-primary text-xs flex items-end gap-2 md:text-2xl font-extralight pr-2 pb-2 md:p-10  '>
+          <Link href={"https://muhammadhilmanhumaini.vercel.app"} target='_blank' className='font-extralight !!text-primary-foreground'>
+            Made with ❤️ by Muhammad Hilman Humaini
           </Link>
-          <Link target='_blank' href='https://muhammadhilmanhumaini.vercel.app' className='relative  md:size-8  size-8 rounded-full bg-white '>
-            <Image className='flex p-1' src={"/icons/HUCO-512x512.png"} alt='HUCO-512x512' fill></Image>
-          </Link>
-        </motion.div>
+        </div>
       </div>
     </main>
   );
