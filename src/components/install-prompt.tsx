@@ -26,6 +26,12 @@ export function InstallPrompt() {
     };
 
     const handleAppInstalled = () => {
+      navigator.serviceWorker.ready.then((reg) => {
+        reg.active?.postMessage({
+          type: "CACHE_URLS",
+          payload: ["/"]
+        });
+      });
       console.log("[App] PWA was installed");
       setIsInstalled(true);
       setShowPrompt(false);
@@ -67,8 +73,8 @@ export function InstallPrompt() {
     <div className='fixed top-4 left-4 right-4 bg-card border border-border rounded-lg shadow-lg p-4 z-50 max-w-sm'>
       <div className='flex items-start gap-3'>
         <div className='flex-1'>
-          <h3 className='font-semibold text-foreground mb-1'>Install Aplikasi PDF Merger</h3>
-          <p className='text-sm  mb-3 text-muted-foreground'>Install Applikasi PDF Merger untuk menggunakan fitur offline.</p>
+          <h3 className='font-semibold text-foreground mb-1'>Install App</h3>
+          <p className='text-sm mb-3 text-muted-foreground'>Install this app to use offline with full features.</p>
           <div className='flex gap-2'>
             <button onClick={handleInstall} className='flex items-center gap-2 px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 transition-opacity'>
               <Download className='w-4 h-4' />

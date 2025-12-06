@@ -1,9 +1,18 @@
+import withSerwistInit from "@serwist/next";
 import type { NextConfig } from "next";
 
+const withSerwist = withSerwistInit({
+  swSrc: "src/sw.ts",
+  swDest: "public/sw.js",
+  scope: "/",
+  disable: false,
+  cacheOnNavigation: true,
+  globPublicPatterns: ["**/*.{js,css,html,woff,woff2,ttf,eot,ico,svg,png,jpg,jpeg,gif,webp}"]
+});
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   devIndicators: false,
-  
+  turbopack: {},
   async headers() {
     return [
       {
@@ -22,27 +31,17 @@ const nextConfig: NextConfig = {
             value: "strict-origin-when-cross-origin"
           }
         ]
-      },
-      {
-        source: "/sw.js",
-        headers: [
-          {
-            key: "Content-Type",
-            value: "application/javascript; charset=utf-8"
-          },
-          {
-            key: "Cache-Control",
-            value: "no-cache, no-store, must-revalidate"
-          },
-          {
-            key: "Content-Security-Policy",
-            value: "default-src 'self'; script-src 'self'"
-          }
-        ]
       }
     ];
+  },
+  experimental: {
+    optimizePackageImports: undefined
   }
+  // experimental: {
+  //   optimizePackageImports: [], // disable dengan benar
+  //   turbopackFileSystemCacheForDev: true
+  // }
   /* config options here */
 };
 
-export default nextConfig;
+export default withSerwist(nextConfig);

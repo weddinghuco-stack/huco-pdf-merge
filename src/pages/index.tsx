@@ -4,13 +4,13 @@ import { useState, useCallback, useRef } from "react";
 import { PDFDocument } from "pdf-lib";
 import JSZip from "jszip";
 import { FileUp, Trash2, Download, Loader2, Archive } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/src/components/ui/card";
+import { Button } from "@/src/components/ui/button";
 import { AnimatePresence, motion, MotionNodeAnimationOptions, Variant, Variants } from "motion/react";
 import { toast } from "sonner";
+
+import { InstallPrompt } from "@/src/components/install-prompt";
 import Link from "next/link";
-import Image from "next/image";
-import { InstallPrompt } from "@/components/install-prompt";
 
 interface PDFFile {
   id: string;
@@ -361,7 +361,6 @@ export default function Home() {
 
   return (
     <main className='w-full bg-background items-start min-h-svh justify-center flex'>
-      <InstallPrompt />
       <div className='container flex flex-col mx-auto px-4 py-12 w-full max-w-3xl min-h-svh'>
         <div className='text-center mb-10 flex-0'>
           <motion.h1 initial={animVariants.fadeDown.initial} animate={animVariants.fadeDown.animate} transition={animVariants.fadeDown.transition} className='text-4xl font-bold text-foreground mb-3 text-balance uppercase'>
